@@ -1,0 +1,16 @@
+[package]
+name = "screenshit"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ab_glyph = "0.2.32"
+arboard = { version = "3.6.1", features = ["wayland-data-control"] }
+eframe = "0.32"
+egui = "0.32"
+image = "0.25"
+imageproc = "0.25"
+rfd = "0.17.2"
+
+[target."cfg(windows)".dependencies]
+xcap = "0.9.6"
