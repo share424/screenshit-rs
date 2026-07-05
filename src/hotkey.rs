@@ -43,6 +43,29 @@ pub fn install(region: bool) -> Result<String, String> {
     }
 }
 
+pub fn uninstall() -> Result<String, String> {
+    if !cfg!(target_os = "linux") {
+        return Err("uninstall-hotkey is only supported on Linux.".into());
+    }
+
+    let desktop = std::env::var("XDG_CURRENT_DESKTOP")
+        .unwrap_or_default()
+        .to_ascii_uppercase();
+
+    if desktop.contains("GNOME") {
+        uninstall_gnome()
+    } else if desktop.contains("XFCE") {
+        uninstall_xfce()
+    } else {
+        Err(format!(
+            "Automatic hotkey removal is not supported for your desktop \
+             ({}).\nRemove the Print binding the same way you added it \
+             (shortcut settings or your compositor config).",
+            if desktop.is_empty() { "unknown" } else { &desktop }
+        ))
+    }
+}
+
 fn run(cmd: &str, args: &[&str]) -> Result<String, String> {
     let out = Command::new(cmd)
         .args(args)
@@ -109,6 +132,49 @@ fn install_gnome(command: &str) -> Result<String, String> {
           and remove ours with\n\
           gsettings reset {GNOME_MEDIA_KEYS} custom-keybindings)"
     ))
+}
+
+fn uninstall_gnome() -> Result<String, String> {
+    // Drop our entry from the custom-keybindings list.
+    let raw = run("gsettings", &["get", GNOME_MEDIA_KEYS, "custom-keybindings"])?;
+    let entries: Vec<String> = parse_string_array(&raw)
+        .into_iter()
+        .filter(|e| e != GNOME_KB_PATH)
+        .collect();
+    let list = format!(
+        "[{}]",
+        entries
+            .iter()
+            .map(|e| format!("'{e}'"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    run(
+        "gsettings",
+        &["set", GNOME_MEDIA_KEYS, "custom-keybindings", &list],
+    )?;
+
+    // Clear the keybinding's stored name/command/binding.
+    let schema = format!("{GNOME_MEDIA_KEYS}.custom-keybinding:{GNOME_KB_PATH}");
+    run("gsettings", &["reset-recursively", &schema])?;
+
+    // Give the Print key back to GNOME's built-in screenshot UI.
+    run(
+        "gsettings",
+        &["reset", "org.gnome.shell.keybindings", "show-screenshot-ui"],
+    )?;
+
+    Ok("Removed the PrintScreen binding and restored GNOME's built-in \
+        screenshot UI on Print."
+        .into())
+}
+
+fn uninstall_xfce() -> Result<String, String> {
+    run(
+        "xfconf-query",
+        &["-c", "xfce4-keyboard-shortcuts", "-p", "/commands/custom/Print", "-r"],
+    )?;
+    Ok("Removed the PrintScreen binding.".into())
 }
 
 fn install_xfce(command: &str) -> Result<String, String> {

@@ -45,6 +45,13 @@ GNOME's built-in screenshot UI from Print — the command output tells you how
 to restore it). On **XFCE** it uses `xfconf-query`. On other desktops
 (KDE, sway, i3, Hyprland) it prints the exact line/steps to add yourself.
 
+To undo everything (removes the binding and, on GNOME, restores the built-in
+screenshot UI on Print):
+
+```
+screenshit uninstall-hotkey
+```
+
 ## Editor
 
 | Tool   | How |

@@ -16,6 +16,7 @@ Usage:
   screenshit --region               Region capture via the native picker (Linux)
   screenshit install-hotkey         Bind PrintScreen to this app (Linux)
   screenshit install-hotkey --region    ... binding region capture instead
+  screenshit uninstall-hotkey       Remove the PrintScreen binding again (Linux)
 
 Editor shortcuts:
   Ctrl+Z          undo        Ctrl+Shift+Z / Ctrl+Y   redo
@@ -41,9 +42,16 @@ fn main() {
         return;
     }
 
-    if args.first().is_some_and(|a| a == "install-hotkey") {
-        let region = args.iter().any(|a| a == "--region" || a == "-r");
-        match hotkey::install(region) {
+    if let Some(sub @ ("install-hotkey" | "uninstall-hotkey")) =
+        args.first().map(String::as_str)
+    {
+        let result = if sub == "install-hotkey" {
+            let region = args.iter().any(|a| a == "--region" || a == "-r");
+            hotkey::install(region)
+        } else {
+            hotkey::uninstall()
+        };
+        match result {
             Ok(msg) => println!("{msg}"),
             Err(msg) => {
                 eprintln!("{msg}");
