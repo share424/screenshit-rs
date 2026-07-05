@@ -66,6 +66,8 @@ pub struct EditorApp {
     drag: Option<Drag>,
     crop_sel: Option<Rect>, // image coords
     text_edit: Option<TextEditState>,
+    /// Whether the current eraser gesture already pushed an undo snapshot.
+    eraser_pushed: bool,
 
     font: FontArc,
     status: Option<(String, f64)>,
@@ -89,6 +91,7 @@ impl EditorApp {
             drag: None,
             crop_sel: None,
             text_edit: None,
+            eraser_pushed: false,
             font: annotate::default_font(),
             status: None,
             last_zoom: 1.0,
@@ -286,6 +289,8 @@ impl EditorApp {
                 ui.selectable_value(&mut self.tool, Tool::Ellipse, "○ Circle")
                     .on_hover_text("Hold Shift for a perfect circle");
                 ui.selectable_value(&mut self.tool, Tool::Text, "T Text");
+                ui.selectable_value(&mut self.tool, Tool::Eraser, "⌫ Erase")
+                    .on_hover_text("Click or sweep over a drawn item to remove it");
                 ui.separator();
 
                 ui.color_edit_button_srgba(&mut self.color);
@@ -304,7 +309,7 @@ impl EditorApp {
                                 .fixed_decimals(0),
                         );
                     }
-                    Tool::Crop => {}
+                    Tool::Crop | Tool::Eraser => {}
                 }
                 ui.separator();
 
@@ -502,6 +507,12 @@ impl EditorApp {
                     Tool::Text => CursorIcon::Text,
                     _ => CursorIcon::Crosshair,
                 });
+                // Eraser reach indicator.
+                if self.tool == Tool::Eraser {
+                    if let Some(hp) = response.hover_pos() {
+                        painter.circle_stroke(hp, 8.0, Stroke::new(1.0_f32, Color32::GRAY));
+                    }
+                }
             }
 
             // --- interaction -------------------------------------------------
@@ -604,6 +615,24 @@ impl EditorApp {
                                 Some(Rect::from_two_pos(drag.start, drag.current));
                         }
                         _ => {}
+                    }
+                }
+            }
+            if self.tool == Tool::Eraser {
+                if response.drag_started() || response.clicked() {
+                    self.eraser_pushed = false;
+                }
+                if response.dragged() || response.clicked() {
+                    if let Some(p) = pointer {
+                        // ~8 screen px of reach, in image coordinates.
+                        let threshold = 8.0 / scale;
+                        if self.annotations.iter().any(|a| a.hit(p, threshold)) {
+                            if !self.eraser_pushed {
+                                self.push_undo();
+                                self.eraser_pushed = true;
+                            }
+                            self.annotations.retain(|a| !a.hit(p, threshold));
+                        }
                     }
                 }
             }

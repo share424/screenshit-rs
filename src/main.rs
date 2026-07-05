@@ -4,14 +4,18 @@
 mod annotate;
 mod capture;
 mod editor;
+mod hotkey;
 
 use std::path::PathBuf;
 
 const USAGE: &str = "screenshit - screenshot & annotation tool
 
 Usage:
-  screenshit             Capture the screen and open the editor
-  screenshit <image>     Open an existing image in the editor
+  screenshit                        Capture the screen and open the editor
+  screenshit <image>                Open an existing image in the editor
+  screenshit --region               Region capture via the native picker (Linux)
+  screenshit install-hotkey         Bind PrintScreen to this app (Linux)
+  screenshit install-hotkey --region    ... binding region capture instead
 
 Editor shortcuts:
   Ctrl+Z          undo        Ctrl+Shift+Z / Ctrl+Y   redo
@@ -37,7 +41,23 @@ fn main() {
         return;
     }
 
-    let source_path: Option<PathBuf> = args.first().map(PathBuf::from);
+    if args.first().is_some_and(|a| a == "install-hotkey") {
+        let region = args.iter().any(|a| a == "--region" || a == "-r");
+        match hotkey::install(region) {
+            Ok(msg) => println!("{msg}"),
+            Err(msg) => {
+                eprintln!("{msg}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
+    let region = args.iter().any(|a| a == "--region" || a == "-r");
+    let source_path: Option<PathBuf> = args
+        .iter()
+        .find(|a| !a.starts_with('-'))
+        .map(PathBuf::from);
 
     let (image, title) = match &source_path {
         Some(path) => {
@@ -51,6 +71,11 @@ fn main() {
                 .unwrap_or_default();
             (img, format!("screenshit — {name}"))
         }
+        None if region => match capture::capture_region() {
+            Ok(img) => (img, "screenshit — screenshot".to_string()),
+            Err(capture::CaptureError::Cancelled) => return, // user pressed Esc
+            Err(capture::CaptureError::Failed(e)) => fatal(&e),
+        },
         None => match capture::capture() {
             Ok(img) => (img, "screenshit — screenshot".to_string()),
             Err(e) => fatal(&e),

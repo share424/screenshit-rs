@@ -9,8 +9,10 @@ text on it, and save it or copy the result to the clipboard.
 ## Usage
 
 ```
-screenshit             # capture the full screen, then open the editor
-screenshit <image>     # open an existing image in the editor
+screenshit                  # capture the full screen, then open the editor
+screenshit <image>          # open an existing image in the editor
+screenshit --region         # region capture via the native picker (Linux only)
+screenshit install-hotkey   # bind PrintScreen to this app (Linux only)
 ```
 
 ### How capture works
@@ -22,11 +24,26 @@ screenshit <image>     # open an existing image in the editor
   `gnome-screenshot`, `spectacle`, `grim` (Wayland), or `maim` / `scrot` /
   `import` (X11). Install any one of them.
 
-For **region selection on Linux**, bind `scripts/screenshot.sh` to a hotkey
-instead — it uses the native tool's region picker (`grim`+`slurp`,
-`gnome-screenshot -a`, `maim -s`, …) and then opens this app with the result.
-On Windows (and everywhere else) you can simply capture the full screen and
-use the crop tool.
+**Region selection on Linux**: `screenshit --region` uses the native tool's
+region picker (`grim`+`slurp`, `gnome-screenshot -a`, `maim -s`, …) and opens
+the editor with the result. Cancelling the picker (Esc) just exits quietly.
+On Windows you can simply capture the full screen and use the crop tool.
+(`scripts/screenshot.sh` does the same as `--region` as a standalone script,
+if you prefer that for hotkey managers.)
+
+### PrintScreen hotkey (Linux)
+
+`cargo install` cannot run post-install steps, so after installing run:
+
+```
+screenshit install-hotkey            # PrintScreen -> full-screen capture
+screenshit install-hotkey --region   # PrintScreen -> region picker
+```
+
+On **GNOME** this registers a custom keybinding via `gsettings` (and unbinds
+GNOME's built-in screenshot UI from Print — the command output tells you how
+to restore it). On **XFCE** it uses `xfconf-query`. On other desktops
+(KDE, sway, i3, Hyprland) it prints the exact line/steps to add yourself.
 
 ## Editor
 
@@ -39,6 +56,7 @@ use the crop tool.
 | Rect   | Drag a box. Hold **Shift** for a square. |
 | Circle | Drag the bounding box. Hold **Shift** for a perfect circle. |
 | Text   | Click to place, type, **Enter** to commit, **Esc** to cancel. |
+| Erase  | Click or sweep over an annotation to remove it (whole-object eraser; undoable). |
 
 Color, stroke width and font size are in the toolbar.
 

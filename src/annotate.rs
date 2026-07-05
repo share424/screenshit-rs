@@ -21,6 +21,7 @@ pub enum Tool {
     Rect,
     Ellipse,
     Text,
+    Eraser,
 }
 
 #[derive(Clone)]
@@ -81,6 +82,84 @@ impl Annotation {
             Annotation::Text { pos, .. } => *pos += delta,
         }
     }
+
+    /// Whether point `p` (image coords) touches this annotation, within
+    /// `threshold` extra pixels. Used by the eraser.
+    pub fn hit(&self, p: Pos2, threshold: f32) -> bool {
+        match self {
+            Annotation::Line {
+                from,
+                to,
+                width,
+                ..
+            }
+            | Annotation::Arrow {
+                from,
+                to,
+                width,
+                ..
+            } => seg_dist(p, *from, *to) <= width * 0.5 + threshold,
+            Annotation::Draw { points, width, .. } => {
+                let reach = width * 0.5 + threshold;
+                match points.len() {
+                    0 => false,
+                    1 => (p - points[0]).length() <= reach,
+                    _ => points
+                        .windows(2)
+                        .any(|seg| seg_dist(p, seg[0], seg[1]) <= reach),
+                }
+            }
+            Annotation::Rect {
+                from,
+                to,
+                width,
+                ..
+            } => {
+                let reach = width * 0.5 + threshold;
+                let (a, b) = (*from, *to);
+                let corners = [a, Pos2::new(b.x, a.y), b, Pos2::new(a.x, b.y)];
+                (0..4).any(|i| seg_dist(p, corners[i], corners[(i + 1) % 4]) <= reach)
+            }
+            Annotation::Ellipse {
+                from,
+                to,
+                width,
+                ..
+            } => {
+                let reach = width * 0.5 + threshold;
+                if (to.x - from.x).abs() < 2.0 || (to.y - from.y).abs() < 2.0 {
+                    return seg_dist(p, *from, *to) <= reach;
+                }
+                let path = ellipse_path(*from, *to);
+                (0..path.len())
+                    .any(|i| seg_dist(p, path[i], path[(i + 1) % path.len()]) <= reach)
+            }
+            Annotation::Text {
+                pos, text, size, ..
+            } => {
+                // Approximate bounding box: good enough for erasing.
+                let lines: Vec<&str> = text.lines().collect();
+                let max_chars = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+                let w = max_chars as f32 * size * 0.55;
+                let h = lines.len().max(1) as f32 * size * 1.25;
+                p.x >= pos.x - threshold
+                    && p.x <= pos.x + w + threshold
+                    && p.y >= pos.y - threshold
+                    && p.y <= pos.y + h + threshold
+            }
+        }
+    }
+}
+
+/// Distance from point `p` to segment `a`..`b`.
+fn seg_dist(p: Pos2, a: Pos2, b: Pos2) -> f32 {
+    let ab = b - a;
+    let len2 = ab.length_sq();
+    if len2 <= f32::EPSILON {
+        return (p - a).length();
+    }
+    let t = ((p - a).dot(ab) / len2).clamp(0.0, 1.0);
+    (p - (a + ab * t)).length()
 }
 
 /// Smooth a raw freehand stroke with a Catmull-Rom spline so it looks fluid
@@ -459,6 +538,54 @@ mod tests {
         assert_eq!(*smooth.last().unwrap(), raw[3]);
         // Short strokes pass through unchanged.
         assert_eq!(smooth_stroke(&raw[..2]).len(), 2);
+    }
+
+    #[test]
+    fn eraser_hit_testing() {
+        let red = Color32::from_rgb(255, 0, 0);
+        let line = Annotation::Line {
+            from: Pos2::new(10.0, 10.0),
+            to: Pos2::new(100.0, 10.0),
+            color: red,
+            width: 4.0,
+        };
+        assert!(line.hit(Pos2::new(50.0, 12.0), 3.0)); // near the segment
+        assert!(!line.hit(Pos2::new(50.0, 40.0), 3.0)); // far away
+
+        let rect = Annotation::Rect {
+            from: Pos2::new(20.0, 20.0),
+            to: Pos2::new(80.0, 60.0),
+            color: red,
+            width: 2.0,
+        };
+        assert!(rect.hit(Pos2::new(20.0, 40.0), 3.0)); // on left edge
+        assert!(!rect.hit(Pos2::new(50.0, 40.0), 3.0)); // inside, not on outline
+
+        let ellipse = Annotation::Ellipse {
+            from: Pos2::new(0.0, 0.0),
+            to: Pos2::new(100.0, 100.0),
+            color: red,
+            width: 2.0,
+        };
+        assert!(ellipse.hit(Pos2::new(50.0, 1.0), 3.0)); // top of the ring
+        assert!(!ellipse.hit(Pos2::new(50.0, 50.0), 3.0)); // center
+
+        let text = Annotation::Text {
+            pos: Pos2::new(10.0, 10.0),
+            text: "hello".into(),
+            color: red,
+            size: 20.0,
+        };
+        assert!(text.hit(Pos2::new(30.0, 20.0), 3.0)); // inside bbox
+        assert!(!text.hit(Pos2::new(150.0, 20.0), 3.0)); // right of bbox
+
+        let dot = Annotation::Draw {
+            points: vec![Pos2::new(5.0, 5.0)],
+            color: red,
+            width: 4.0,
+        };
+        assert!(dot.hit(Pos2::new(7.0, 5.0), 3.0));
+        assert!(!dot.hit(Pos2::new(20.0, 5.0), 3.0));
     }
 
     #[test]
